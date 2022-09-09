@@ -26,6 +26,44 @@ def calc_local_model_size(model: torch.nn.Module):
         numel_per_device += p.numel()
     return numel_per_device
 
+class PrintMetricByStepHook(hooks.BaseHook):
+    """Hook to log metric by step.
+    Args:
+        priority (int, optional): Priority in the printing, hooks with small priority will be printed in front,
+            defaults to 10. If different hooks share same priority, the order of printing would
+            depend on the hooks order in the hook list.
+    """
+
+    def __init__(self, priority: int = 10):
+        super().__init__(priority)
+
+    def after_train_iter(self, trainer, *args):
+        trainer.states['step_metrics'] = dict()
+        for metric_name, metric_calculator in trainer.states['metrics']['train'].items():
+            if isinstance(metric_calculator, hooks._metric_hook.ThroughputMetric):
+                trainer.states['step_metrics'][metric_name.lower()] = metric_calculator.get_last_step_info()
+            else:
+                trainer.states['step_metrics'][metric_name.lower()] = metric_calculator.get_last_step_value()
+        if trainer._should_display_progress(True):
+            print(trainer.states['step_metrics'])
+
+    def after_test_iter(self, trainer, *args):
+        trainer.states['step_metrics'] = dict()
+        for metric_name, metric_calculator in trainer.states['metrics']['test'].items():
+            if isinstance(metric_calculator, hooks._metric_hook.ThroughputMetric):
+                trainer.states['step_metrics'][metric_name.lower()] = metric_calculator.get_last_step_info()
+            else:
+                trainer.states['step_metrics'][metric_name.lower()] = metric_calculator.get_last_step_value()
+        if trainer._should_display_progress(True):
+            print(trainer.states['step_metrics'])
+
+class PrintGradScalerByStepHook(hooks.BaseHook):
+    def __init__(self, priority: int = 10):
+        super().__init__(priority)
+
+    def after_train_iter(self, trainer, *args):
+        if trainer._should_display_progress(True):
+            print(f"loss scale is {trainer.engine.optimizer.grad_scaler.scale.item()}")
 
 def main():
     parser = colossalai.get_default_parser()
@@ -100,7 +138,8 @@ def main():
         hooks.LRSchedulerHook(lr_scheduler=lr_scheduler, by_epoch=True),
         hooks.LogMetricByEpochHook(logger),
         hooks.ThroughputHook(ignored_steps=10, tflop_per_step=tflop),
-        hooks.LogMetricByStepHook(),
+        PrintMetricByStepHook(),
+        PrintGradScalerByStepHook(),
         hooks.LogMemoryByEpochHook(logger),
         # hooks.LogMemoryByEpochHook(logger),
         # hooks.LogTimingByEpochHook(timer, logger),
@@ -110,7 +149,7 @@ def main():
         epochs=gpc.config.NUM_EPOCHS,
         test_interval=1,
         hooks=hook_list,
-        display_progress=True,
+        display_progress=False,
         return_output_label=False
     )
 

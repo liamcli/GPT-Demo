@@ -1,0 +1,42 @@
+name: colossal_ai_gpt_18_4B_pp4tp1mb4
+workspace: liam
+project: colossal_ai
+resources:
+  slots_per_trial: 16
+  shm_size: 500000000000
+  devices:
+    - host_path: /dev/infiniband
+      container_path: /dev/infiniband
+environment:
+  #add_capabilities:
+  #  - IPC_LOCK
+  image: liamdetermined/development:colossal
+  force_pull_image: true
+  environment_variables:
+    - http_proxy=http://web-proxy.bbn.hpecorp.net:8088
+    - https_proxy=http://web-proxy.bbn.hpecorp.net:8088
+    - NCCL_SOCKET_IFNAME=ib
+    - NCCL_DEBUG=TRACE
+    - NCCL_IB_CUDA_SUPPORT=1
+    - DATA=/data/small-gpt-dataset.json
+    - PYTHONUNBUFFERED=1
+bind_mounts:
+  - host_path: /cstor/liam/data
+    container_path: /data
+searcher:
+   name: single
+   metric: loss
+   max_length: 1
+
+max_restarts: 0
+
+entrypoint: 
+  - python3 
+  - -m 
+  - determined.launch.torch_distributed 
+  - --
+  - python3
+  - train_gpt.py 
+  - --config 
+  - configs/gpt3_zero3_3d.py
+  - --from_torch
